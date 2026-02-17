@@ -394,8 +394,6 @@ void GameSpecificDialog::OnRcasAttenuationChanged(int sliderValue) {
     ui->RCASSpinBox->blockSignals(true);
     ui->RCASSpinBox->setValue(sliderValue / 1000.0);
     ui->RCASSpinBox->blockSignals(false);
-
-    Config::setRcasAttenuation(static_cast<float>(sliderValue));
 }
 
 void GameSpecificDialog::OnRcasAttenuationSpinBoxChanged(double spinValue) {
@@ -404,8 +402,6 @@ void GameSpecificDialog::OnRcasAttenuationSpinBoxChanged(double spinValue) {
     ui->RCASSlider->blockSignals(true);
     ui->RCASSlider->setValue(intValue);
     ui->RCASSlider->blockSignals(false);
-
-    Config::setRcasAttenuation(static_cast<float>(intValue));
 }
 
 void GameSpecificDialog::LoadValuesFromConfig() {
@@ -499,6 +495,7 @@ void GameSpecificDialog::LoadValuesFromConfig() {
     ui->cacheArchiveCheckBox->setChecked(Config::isPipelineCacheArchived());
     ui->vkValidationCheckBox->setChecked(Config::vkValidationEnabled());
     ui->vkSyncValidationCheckBox->setChecked(Config::vkValidationSyncEnabled());
+    ui->shaderOverlayCheckBox->setChecked(Config::isShaderCompilationOverlayEnabled());
 
     ui->collectShaderCheckBox->setChecked(Config::collectShadersForDebug());
     ui->debugDump->setChecked(Config::debugDump());
@@ -641,6 +638,7 @@ void GameSpecificDialog::LoadValuesFromConfig() {
             ui->fpsLimiterCheckBox->setChecked(toml::find<bool>(gpu, "fpsLimiterEnabled"));
         if (gpu.contains("fsrEnabled"))
             ui->FSRCheckBox->setChecked(toml::find<bool>(gpu, "fsrEnabled"));
+
         if (gpu.contains("FullscreenMode"))
             ui->displayModeComboBox->setCurrentText(
                 QString::fromStdString(toml::find<std::string>(gpu, "FullscreenMode")));
@@ -654,16 +652,15 @@ void GameSpecificDialog::LoadValuesFromConfig() {
                 presentModeMap.value(QString::fromStdString(present)));
         }
 
-        if (gpu.contains("rcas_attenuation")) {
+        if (gpu.contains("rcasAttenuation")) {
             double value = 0.0;
             try {
-                value = toml::find<double>(gpu, "rcas_attenuation");
+                value = toml::find<double>(gpu, "rcasAttenuation");
             } catch (...) {
-                value = static_cast<double>(toml::find<int>(gpu, "rcas_attenuation"));
+                value = static_cast<double>(toml::find<int>(gpu, "rcasAttenuation"));
             }
             ui->RCASSlider->setValue(static_cast<int>(std::lround(value)));
             ui->RCASSpinBox->setValue(value / 1000.0);
-            Config::setRcasAttenuation(static_cast<int>(value));
         }
 
         if (gpu.contains("rcasEnabled"))
@@ -711,6 +708,9 @@ void GameSpecificDialog::LoadValuesFromConfig() {
             ui->hostMarkersCheckBox->setChecked(toml::find<bool>(vk, "hostMarkers"));
         if (vk.contains("rdocEnable"))
             ui->rdocCheckBox->setChecked(toml::find<bool>(vk, "rdocEnable"));
+        if (vk.contains("shaderCompilationOverlayEnable"))
+            ui->shaderOverlayCheckBox->setChecked(
+                toml::find<bool>(vk, "shaderCompilationOverlayEnable"));
         if (vk.contains("pipelineCacheEnable"))
             ui->cacheCheckBox->setChecked(toml::find<bool>(vk, "pipelineCacheEnable"));
         if (vk.contains("pipelineCacheArchive"))
@@ -885,6 +885,10 @@ void GameSpecificDialog::UpdateSettings() {
     if (ui->FSRCheckBox->isChecked() != Config::getFsrEnabled())
         overrides["GPU"]["fsrEnabled"] = ui->FSRCheckBox->isChecked();
 
+    if (ui->shaderOverlayCheckBox->isChecked() != Config::isShaderCompilationOverlayEnabled())
+        overrides["Vulkan"]["shaderCompilationOverlayEnable"] =
+            ui->shaderOverlayCheckBox->isChecked();
+
     {
         QString comboText = ui->displayModeComboBox->currentText();
         std::string screen = screenModeMap.value(comboText, "Windowed").toStdString();
@@ -902,11 +906,11 @@ void GameSpecificDialog::UpdateSettings() {
         overrides["GPU"]["presentMode"] = key.toStdString();
 
     {
-        int current = static_cast<int>(Config::getRcasAttenuation());
+        int current = Config::getRcasAttenuation();
         int newVal = ui->RCASSlider->value();
 
         if (newVal != current)
-            overrides["GPU"]["rcas_attenuation"] = static_cast<double>(newVal);
+            overrides["GPU"]["rcasAttenuation"] = static_cast<double>(newVal);
     }
 
     if (ui->RCASCheckBox->isChecked() != Config::getRcasEnabled())

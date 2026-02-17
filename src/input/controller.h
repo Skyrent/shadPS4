@@ -3,12 +3,17 @@
 
 #pragma once
 
+#include <array>
+#include <chrono>
 #include <mutex>
+#include <utility>
 #include <SDL3/SDL_gamepad.h>
 #include "SDL3/SDL_joystick.h"
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "common/types.h"
 #include "core/libraries/pad/pad.h"
+#include "core/libraries/system/userservice.h"
 
 struct SDL_Gamepad;
 
@@ -25,6 +30,11 @@ enum class Axis {
     AxisMax
 };
 
+template <typename T>
+using AxisArray = std::array<T, static_cast<size_t>(Axis::AxisMax)>;
+
+constexpr AxisArray<s32> axis_defaults = {128, 128, 128, 128, 0, 0};
+
 struct TouchpadEntry {
     u8 ID = 0;
     bool state{};
@@ -35,7 +45,7 @@ struct TouchpadEntry {
 struct State {
     Libraries::Pad::OrbisPadButtonDataOffset buttonsState{};
     u64 time = 0;
-    int axes[static_cast<int>(Axis::AxisMax)] = {128, 128, 128, 128, 0, 0};
+    AxisArray<s32> axes{axis_defaults};
     TouchpadEntry touchpad[2] = {{false, 0, 0}, {false, 0, 0}};
     Libraries::Pad::OrbisFVector3 acceleration = {0.0f, 0.0f, 0.0f};
     Libraries::Pad::OrbisFVector3 angularVelocity = {0.0f, 0.0f, 0.0f};
@@ -61,7 +71,10 @@ public:
     State GetLastState() const;
     void CheckButton(int id, Libraries::Pad::OrbisPadButtonDataOffset button, bool isPressed);
     void AddState(const State& state);
-    void Axis(int id, Input::Axis axis, int value);
+
+    void Axis(Axis axis, int value, bool smooth = true);
+    void UpdateAxisSmoothing();
+
     void Gyro(int id, const float gyro[3]);
     void Acceleration(int id, const float acceleration[3]);
     void SetLightBarRGB(u8 r, u8 g, u8 b);
@@ -101,6 +114,12 @@ private:
         bool obtained = false;
     };
 
+    static constexpr u64 axis_smoothing_time{33000};
+    AxisArray<bool> axis_smoothing_flags = {true, true, true, true, true, true};
+    AxisArray<u64> axis_smoothing_start_times = {0, 0, 0, 0, 0, 0};
+    AxisArray<int> axis_smoothing_start_values = axis_defaults;
+    AxisArray<int> axis_smoothing_end_values = axis_defaults;
+
     std::mutex m_mutex;
     bool m_connected = true;
     State m_last_state;
@@ -127,14 +146,21 @@ public:
     GameControllers()
         : controllers({new GameController(), new GameController(), new GameController(),
                        new GameController()}) {};
+
+    void Cleanup() {
+        for (auto* controller : controllers) {
+            delete controller;
+        }
+    }
     virtual ~GameControllers() = default;
     GameController* operator[](const size_t& i) const {
-        ASSERT_MSG(i < controllers.size(), "Out of range controller index {}", i);
-        if (i >= controllers.size())
+        if (i >= controllers.size()) {
+            LOG_ERROR(Input, "Index {} is out of bounds for GameControllers! Returning nullptr.",
+                      i);
             return nullptr;
+        }
         return controllers[i];
     }
-
     GameController* GetController(u8 id) const {
         if (id >= controllers.size())
             return nullptr;

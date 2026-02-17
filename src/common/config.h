@@ -73,6 +73,8 @@ bool getPSNSignedIn();
 bool getShaderSkipsEnabled();
 std::string getAudioBackend();
 int getAudioVolume();
+bool groupIdenticalLogs();
+void setGroupIdenticalLogs(bool enable, bool is_game_specific = false);
 
 std::string getLogFilter();
 std::string getLogType();
@@ -191,6 +193,8 @@ bool getIsMotionControlsEnabled();
 void setIsMotionControlsEnabled(bool use);
 std::string getDefaultControllerID();
 void setDefaultControllerID(std::string id);
+std::string getActiveControllerID();
+void setActiveControllerID(std::string id);
 bool getBackgroundControllerInput();
 void setBackgroundControllerInput(bool enable);
 bool getLoggingEnabled();
@@ -306,9 +310,13 @@ u32 getMainWindowGeometryW();
 u32 getMainWindowGeometryH();
 bool isPipelineCacheEnabled();
 void setPipelineCacheEnabled(bool enable, bool is_game_specific = false);
+bool isShaderCompilationOverlayEnabled();
+void setShaderCompilationOverlayEnabled(bool enable, bool is_game_specific = false);
 const std::vector<std::filesystem::path> getGameDirectories();
 const std::vector<bool> getGameDirectoriesEnabled();
 std::filesystem::path getAddonDirectory();
+std::filesystem::path getFontsPath();
+void setFontsPath(const std::filesystem::path& path);
 u32 getMainWindowTheme();
 u32 getIconSize();
 u32 getIconSizeGrid();
@@ -325,6 +333,7 @@ int getVolumeSlider();
 void setVolumeSlider(int volumeValue, bool is_game_specific);
 bool isMuteEnabled();
 void setMuteEnabled(bool enabled);
+bool hasCustomMuteHotkey();
 
 bool GamesMenuUI();
 void setGamesMenuUI(bool enable);
@@ -340,7 +349,7 @@ void setUseHomeButtonForHotkeys(bool disable);
 void setDefaultValues();
 
 constexpr std::string_view GetDefaultGlobalConfig();
-std::filesystem::path GetFoolproofInputConfigFile(const std::string& game_id = "");
+std::filesystem::path GetInputConfigFile(const std::string& game_id = "");
 
 // settings
 u32 GetLanguage();

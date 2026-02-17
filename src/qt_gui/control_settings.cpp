@@ -177,7 +177,7 @@ void ControlSettings::SaveControllerConfig(bool CloseOnSave) {
     config_id = (ui->ProfileComboBox->currentText() == tr("Common Config"))
                     ? "default"
                     : ui->ProfileComboBox->currentText().toStdString();
-    const auto config_file = Config::GetFoolproofInputConfigFile(config_id);
+    const auto config_file = Config::GetInputConfigFile(config_id);
 
     int lineCount = 0;
     std::string line;
@@ -418,7 +418,7 @@ void ControlSettings::SetUIValuestoMappings() {
                     ? "default"
                     : ui->ProfileComboBox->currentText().toStdString();
 
-    const auto config_file = Config::GetFoolproofInputConfigFile(config_id);
+    const auto config_file = Config::GetInputConfigFile(config_id);
     std::ifstream file(config_file);
 
     bool CrossExists = false, CircleExists = false, SquareExists = false, TriangleExists = false,
@@ -685,9 +685,13 @@ void ControlSettings::UpdateLightbarColor() {
 }
 
 void ControlSettings::ActiveControllerChanged(int value) {
-    GamepadSelect::SetSelectedGamepad(GamepadSelect::GetGUIDString(gamepads, value));
-    QString GUID = QString::fromStdString(GamepadSelect::GetSelectedGamepad()).right(16);
-    ui->ActiveGamepadLabel->setText("ID: " + GUID);
+    std::string GUID = GamepadSelect::GetGUIDString(gamepads, value);
+    GamepadSelect::SetSelectedGamepad(GUID);
+    Config::setActiveControllerID(GUID);
+    Config::save(Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "config.toml");
+
+    QString qGUID = QString::fromStdString(GUID).right(16);
+    ui->ActiveGamepadLabel->setText("ID: " + qGUID);
 
     if (gamepad) {
         SDL_CloseGamepad(gamepad);
@@ -717,8 +721,8 @@ void ControlSettings::CheckGamePad() {
     QString defaultGUID = "";
     int defaultIndex =
         GamepadSelect::GetIndexfromGUID(gamepads, gamepad_count, Config::getDefaultControllerID());
-    int activeIndex = GamepadSelect::GetIndexfromGUID(gamepads, gamepad_count,
-                                                      GamepadSelect::GetSelectedGamepad());
+    int activeIndex =
+        GamepadSelect::GetIndexfromGUID(gamepads, gamepad_count, Config::getActiveControllerID());
 
     if (!gamepads || gamepad_count == 0) {
         ui->ActiveGamepadBox->addItem("No gamepads detected");
@@ -759,13 +763,18 @@ void ControlSettings::CheckGamePad() {
             QString::fromStdString(GamepadSelect::GetGUIDString(gamepads, activeIndex)).right(16);
         ui->ActiveGamepadLabel->setText(tr("ID: ") + GUID);
         ui->ActiveGamepadBox->setCurrentIndex(activeIndex);
+        GamepadSelect::SetSelectedGamepad(GamepadSelect::GetGUIDString(gamepads, activeIndex));
     } else if (defaultIndex != -1) {
-        ui->ActiveGamepadLabel->setText(defaultGUID);
+        QString GUID =
+            QString::fromStdString(GamepadSelect::GetGUIDString(gamepads, defaultIndex)).right(16);
+        ui->ActiveGamepadLabel->setText("ID: " + GUID);
         ui->ActiveGamepadBox->setCurrentIndex(defaultIndex);
+        GamepadSelect::SetSelectedGamepad(GamepadSelect::GetGUIDString(gamepads, defaultIndex));
     } else {
         QString GUID = QString::fromStdString(GamepadSelect::GetGUIDString(gamepads, 0)).right(16);
         ui->ActiveGamepadLabel->setText("ID: " + GUID);
         ui->ActiveGamepadBox->setCurrentIndex(0);
+        GamepadSelect::SetSelectedGamepad(GamepadSelect::GetGUIDString(gamepads, 0));
     }
 }
 

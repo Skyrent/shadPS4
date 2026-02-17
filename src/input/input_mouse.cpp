@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <cmath>
@@ -77,15 +77,15 @@ void EmulateJoystick(GameController* controller, u32 interval) {
     float a_x = cos(angle) * output_speed, a_y = sin(angle) * output_speed;
 
     if (d_x != 0 || d_y != 0) {
-        controller->Axis(0, axis_x, GetAxis(-0x80, 0x7f, a_x));
-        controller->Axis(0, axis_y, GetAxis(-0x80, 0x7f, a_y));
+        controller->Axis(axis_x, GetAxis(-0x80, 0x7f, a_x));
+        controller->Axis(axis_y, GetAxis(-0x80, 0x7f, a_y));
     } else {
-        controller->Axis(0, axis_x, GetAxis(-0x80, 0x7f, 0));
-        controller->Axis(0, axis_y, GetAxis(-0x80, 0x7f, 0));
+        controller->Axis(axis_x, GetAxis(-0x80, 0x7f, 0));
+        controller->Axis(axis_y, GetAxis(-0x80, 0x7f, 0));
     }
 }
 
-constexpr float constant_down_accel[3] = {0.0f, 10.0f, 0.0f};
+constexpr float constant_down_accel[3] = {0.0f, 9.81f, 0.0f};
 void EmulateGyro(GameController* controller, u32 interval) {
     float d_x = 0, d_y = 0;
     SDL_GetRelativeMouseState(&d_x, &d_y);

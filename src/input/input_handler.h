@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #pragma once
@@ -63,6 +63,9 @@
 #define HOTKEY_REMOVE_VIRTUAL_USER 0xf000000a
 #define HOTKEY_TOGGLE_MOUSE_TO_TOUCHPAD 0xf000000b
 #define HOTKEY_SCREENSHOT 0xf000000c
+#define HOTKEY_VOLUME_UP 0xf000000d
+#define HOTKEY_VOLUME_DOWN 0xf000000f
+#define HOTKEY_VOLUME_MUTE 0xf000000e
 
 #define SDL_UNMAPPED UINT32_MAX - 1
 
@@ -148,6 +151,8 @@ const std::map<std::string, u32> string_to_cbutton_map = {
     {"rpaddle_high", SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1},
     {"rpaddle_low", SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2},
     {"mouse_gyro_roll_mode", MOUSE_GYRO_ROLL_MODE},
+};
+const std::map<std::string, u32> string_to_hotkey_map = {
     {"hotkey_pause", HOTKEY_PAUSE},
     {"hotkey_fullscreen", HOTKEY_FULLSCREEN},
     {"hotkey_show_fps", HOTKEY_SIMPLE_FPS},
@@ -161,6 +166,9 @@ const std::map<std::string, u32> string_to_cbutton_map = {
     {"hotkey_remove_virtual_user", HOTKEY_REMOVE_VIRTUAL_USER},
     {"hotkey_kill_emulator", SDL_EVENT_KILL_EMULATOR},
     {"hotkey_screenshot", HOTKEY_SCREENSHOT},
+    {"hotkey_volume_up", HOTKEY_VOLUME_UP},
+    {"hotkey_volume_down", HOTKEY_VOLUME_DOWN},
+    {"hotkey_volume_mute", HOTKEY_VOLUME_MUTE},
 };
 
 const std::map<std::string, AxisMapping> string_to_axis_map = {
@@ -458,6 +466,14 @@ public:
     ControllerOutput(const ControllerOutput& o) : button(o.button), axis(o.axis) {
         new_param = new s16(*o.new_param);
     }
+    ControllerOutput& operator=(const ControllerOutput& o) {
+        if (this != &o) {
+            button = o.button;
+            axis = o.axis;
+            *new_param = *o.new_param;
+        }
+        return *this;
+    }
     ~ControllerOutput() {
         delete new_param;
     }
@@ -528,7 +544,7 @@ public:
 
 class ControllerAllOutputs {
 public:
-    static constexpr u64 output_count = 40;
+    static constexpr u64 output_count = 43;
     std::array<ControllerOutput, output_count> data = {
         // Important: these have to be the first, or else they will update in the wrong order
         ControllerOutput(LEFTJOYSTICK_HALFMODE),
@@ -579,6 +595,9 @@ public:
         ControllerOutput(HOTKEY_ADD_VIRTUAL_USER),
         ControllerOutput(HOTKEY_REMOVE_VIRTUAL_USER),
         ControllerOutput(HOTKEY_SCREENSHOT),
+        ControllerOutput(HOTKEY_VOLUME_UP),
+        ControllerOutput(HOTKEY_VOLUME_DOWN),
+        ControllerOutput(HOTKEY_VOLUME_MUTE),
         ControllerOutput(SDL_EVENT_KILL_EMULATOR),
 
         ControllerOutput(SDL_GAMEPAD_BUTTON_INVALID, SDL_GAMEPAD_AXIS_INVALID),

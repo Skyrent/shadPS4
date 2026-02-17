@@ -212,7 +212,7 @@ execute_process(
 
 # Set Version
 set(EMULATOR_VERSION_MAJOR "0")
-set(EMULATOR_VERSION_MINOR "13")
+set(EMULATOR_VERSION_MINOR "14")
 set(EMULATOR_VERSION_PATCH "1")
 
 set_source_files_properties(src/shadps4.rc PROPERTIES COMPILE_DEFINITIONS "EMULATOR_VERSION_MAJOR=${EMULATOR_VERSION_MAJOR};EMULATOR_VERSION_MINOR=${EMULATOR_VERSION_MINOR};EMULATOR_VERSION_PATCH=${EMULATOR_VERSION_PATCH}")
@@ -229,12 +229,17 @@ endif ()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(Boost 1.84.0 CONFIG)
+find_package(CLI11 2.6.1 CONFIG)
 find_package(FFmpeg 5.1.2 MODULE)
 find_package(fmt 10.2.0 CONFIG)
 find_package(glslang 15 CONFIG)
 find_package(half 1.12.0 MODULE)
 find_package(magic_enum 0.9.7 CONFIG)
+find_package(miniz 3.1 CONFIG)
+find_package(nlohmann_json 3.12 CONFIG)
 find_package(PNG 1.6 MODULE)
+find_package(OpenAL CONFIG)
+
 find_package(RenderDoc 1.6.0 MODULE)
 find_package(SDL3_mixer 2.8.1 CONFIG)
 if (SDL3_mixer_FOUND)
@@ -313,15 +318,16 @@ set(AJM_LIB src/core/libraries/ajm/ajm.cpp
 
 set(AUDIO_LIB src/core/libraries/audio/audioin.cpp
               src/core/libraries/audio/audioin.h
-              src/core/libraries/audio/sdl_in.h
-              src/core/libraries/audio/sdl_in.cpp
+              src/core/libraries/audio/audioin_backend.h
+              src/core/libraries/audio/audioin_error.h
+              src/core/libraries/audio/sdl_audio_in.cpp
               src/core/libraries/voice/voice.cpp
               src/core/libraries/voice/voice.h
               src/core/libraries/audio/audioout.cpp
               src/core/libraries/audio/audioout.h
               src/core/libraries/audio/audioout_backend.h
               src/core/libraries/audio/audioout_error.h
-              src/core/libraries/audio/sdl_audio.cpp
+              src/core/libraries/audio/sdl_audio_out.cpp
               src/core/libraries/ngs2/ngs2.cpp
               src/core/libraries/ngs2/ngs2.h
 )
@@ -526,6 +532,8 @@ set(HLE_LIBC_INTERNAL_LIB src/core/libraries/libc_internal/libc_internal.cpp
                  src/core/libraries/libc_internal/libc_internal_str.h
                  src/core/libraries/libc_internal/libc_internal_math.cpp
                  src/core/libraries/libc_internal/libc_internal_math.h
+                 src/core/libraries/libc_internal/libc_internal_threads.cpp
+                 src/core/libraries/libc_internal/libc_internal_threads.h
                  src/core/libraries/libc_internal/printf.h
 )
 
@@ -628,6 +636,9 @@ set(NP_LIBS src/core/libraries/np/np_error.h
             src/core/libraries/np/trophy_ui.h
             src/core/libraries/np/np_web_api.cpp
             src/core/libraries/np/np_web_api.h
+            src/core/libraries/np/np_web_api_error.h
+            src/core/libraries/np/np_web_api_internal.cpp
+            src/core/libraries/np/np_web_api_internal.h
             src/core/libraries/np/np_web_api2.cpp
             src/core/libraries/np/np_web_api2.h
             src/core/libraries/np/np_party.cpp
@@ -641,6 +652,7 @@ set(NP_LIBS src/core/libraries/np/np_error.h
             src/core/libraries/np/np_partner.cpp
             src/core/libraries/np/np_partner.h
             src/core/libraries/np/np_signaling.cpp
+            src/core/libraries/np/object_manager.h
 )
 
 set(ZLIB_LIB src/core/libraries/zlib/zlib.cpp
@@ -959,6 +971,7 @@ set(SHADER_RECOMPILER src/shader_recompiler/profile.h
                       src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
                       src/shader_recompiler/ir/passes/hull_shader_transform.cpp
                       src/shader_recompiler/ir/passes/identity_removal_pass.cpp
+                      src/shader_recompiler/ir/passes/inject_clip_distance_attributes.cpp
                       src/shader_recompiler/ir/passes/ir_passes.h
                       src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp
                       src/shader_recompiler/ir/passes/lower_fp64_to_fp32.cpp
@@ -1097,6 +1110,8 @@ set(IMGUI src/imgui/imgui_config.h
           src/imgui/imgui_layer.h
           src/imgui/imgui_std.h
           src/imgui/imgui_texture.h
+                    src/imgui/shader_compilation_overlay.h
+          src/imgui/shader_compilation_overlay.cpp
           src/imgui/renderer/imgui_core.cpp
           src/imgui/renderer/imgui_core.h
           src/imgui/renderer/imgui_impl_sdl3.cpp
@@ -1200,6 +1215,9 @@ set(QT_GUI src/qt_gui/about_dialog.cpp
            src/qt_gui/welcome_dialog.cpp
            src/qt_gui/mod_manager_dialog.cpp
            src/qt_gui/mod_manager_dialog.h
+           src/qt_gui/mod_tracker.cpp
+           src/qt_gui/mod_tracker.h
+
            ${EMULATOR}
            ${RESOURCE_FILES}
            ${TRANSLATIONS}
@@ -1242,7 +1260,7 @@ create_target_directory_groups(shadps4)
 
 target_link_libraries(shadps4 PRIVATE magic_enum::magic_enum fmt::fmt toml11::toml11 tsl::robin_map xbyak::xbyak Tracy::TracyClient RenderDoc::API FFmpeg::ffmpeg Dear_ImGui gcn half::half ZLIB::ZLIB PNG::PNG)
 target_link_libraries(shadps4 PRIVATE Boost::headers GPUOpen::VulkanMemoryAllocator LibAtrac9 sirit Vulkan::Headers xxHash::xxhash Zydis::Zydis glslang::glslang SDL3::SDL3 SDL3_mixer::SDL3_mixer pugixml::pugixml)
-target_link_libraries(shadps4 PRIVATE stb::headers libusb::usb lfreist-hwinfo::hwinfo nlohmann_json::nlohmann_json miniz fdk-aac CLI11::CLI11 Cpp_Httplib)
+target_link_libraries(shadps4 PRIVATE stb::headers libusb::usb lfreist-hwinfo::hwinfo nlohmann_json::nlohmann_json miniz::miniz fdk-aac CLI11::CLI11 Cpp_Httplib)
 target_compile_definitions(shadps4 PRIVATE IMGUI_USER_CONFIG="imgui/imgui_config.h")
 target_compile_definitions(Dear_ImGui PRIVATE IMGUI_USER_CONFIG="${PROJECT_SOURCE_DIR}/src/imgui/imgui_config.h")
 

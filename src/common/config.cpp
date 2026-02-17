@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <fstream>
+#include <map>
 #include <optional>
 #include <string>
 #include <fmt/core.h>
-#include <fmt/xchar.h> // for wstring support
+#include <fmt/xchar.h>
 #include <toml.hpp>
 
 #include "common/assert.h"
@@ -14,6 +15,7 @@
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "common/scm_rev.h"
+#include "input/input_handler.h"
 
 using std::nullopt;
 using std::optional;
@@ -182,6 +184,7 @@ static ConfigEntry<bool> isMotionControlsEnabled(true);
 static ConfigEntry<bool> useUnifiedInputConfig(true);
 static ConfigEntry<std::string> micDevice("Default Device");
 static ConfigEntry<std::string> defaultControllerID("");
+static ConfigEntry<std::string> activeControllerID("");
 static ConfigEntry<bool> backgroundControllerInput(false);
 static ConfigEntry<bool> useSpecialPads[4] = {false, false, false, false};
 static ConfigEntry<int> specialPadClasses[4] = {1, 1, 1, 1};
@@ -230,7 +233,8 @@ static ConfigEntry<bool> vkHostMarkers(false);
 static ConfigEntry<bool> vkGuestMarkers(false);
 static ConfigEntry<bool> rdocEnable(false);
 static ConfigEntry<bool> pipelineCacheEnable(false);
-static ConfigEntry<bool> pipelineCacheArchive(true);
+static ConfigEntry<bool> pipelineCacheArchive(false);
+static ConfigEntry<bool> shaderCompilationOverlayEnable(false);
 
 // Debug
 static ConfigEntry<bool> isDebugDump(false);
@@ -243,6 +247,7 @@ static ConfigEntry<bool> logEnabled(true);
 
 std::unordered_map<std::string, std::vector<std::string>> all_skipped_shader_hashes = {
     {"CUSA16195", {"5f8eaca5", "5469af28"}},
+    {"CUSA00035", {"a7b66f58", "efaaab2b"}},
     {"CUSA00018",
      {"7b9fc304d5a8f0de", "f5874f2a8d7f2037", "f5874f2a65f418f9", "25593f798d7f2037",
       "25593f7965f418f9", "2537adba98213a66", "fe36adba8c8b5626"}},
@@ -292,12 +297,25 @@ static bool isSDL = false;
 static bool isQT = false;
 static bool launcher_boot = false;
 std::unordered_map<std::string, bool> toolbar_visibility_settings;
+static std::filesystem::path fonts_path = {};
+static ConfigEntry<bool> isIdenticalLogGrouped(true);
 
 bool getToolbarWidgetVisibility(const std::string& name, bool default_value) {
     if (toolbar_visibility_settings.count(name)) {
         return toolbar_visibility_settings.at(name);
     }
     return default_value;
+}
+
+std::filesystem::path getFontsPath() {
+    if (fonts_path.empty()) {
+        return Common::FS::GetUserPath(Common::FS::PathType::FontsDir);
+    }
+    return fonts_path;
+}
+
+void setFontsPath(const std::filesystem::path& path) {
+    fonts_path = path;
 }
 
 void setToolbarWidgetVisibility(const std::string& name, bool is_visible) {
@@ -325,6 +343,14 @@ bool getQTInstalled() {
 
 void setQTInstalled(bool use) {
     isQT = use;
+}
+
+bool groupIdenticalLogs() {
+    return isIdenticalLogGrouped.get();
+}
+
+void setIdenticalLogGrouped(bool enable, bool is_game_specific) {
+    isIdenticalLogGrouped.set(enable, is_game_specific);
 }
 
 string GetHttpHostOverride() {
@@ -359,6 +385,14 @@ bool isPipelineCacheEnabled() {
 
 void setPipelineCacheEnabled(bool enable, bool is_game_specific) {
     pipelineCacheEnable.set(enable, is_game_specific);
+}
+
+bool isShaderCompilationOverlayEnabled() {
+    return shaderCompilationOverlayEnable.get();
+}
+
+void setShaderCompilationOverlayEnabled(bool enable, bool is_game_specific) {
+    shaderCompilationOverlayEnable.set(enable, is_game_specific);
 }
 
 void setShowWelcomeDialog(bool enable) {
@@ -723,6 +757,32 @@ bool isMuteEnabled() {
 
 void setMuteEnabled(bool enabled) {
     muteEnabled.base_value = enabled;
+}
+
+bool hasCustomMuteHotkey() {
+    auto hotkey_file = GetInputConfigFile("global");
+    std::ifstream file(hotkey_file);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        std::size_t comment_pos = line.find('#');
+        if (comment_pos != std::string::npos) {
+            line = line.substr(0, comment_pos);
+        }
+        line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
+        if (line.empty())
+            continue;
+
+        if (line.find("hotkey_volume_mute") != std::string::npos) {
+            std::size_t equal_pos = line.find('=');
+            if (equal_pos != std::string::npos) {
+                std::string value = line.substr(equal_pos + 1);
+                value.erase(std::remove_if(value.begin(), value.end(), ::isspace), value.end());
+                return value != "unmapped" && !value.empty();
+            }
+        }
+    }
+    return false;
 }
 
 bool getUseSpecialPad(int pad) {
@@ -1338,7 +1398,6 @@ void setPSNSignedIn(bool sign) {
 bool getShaderSkipsEnabled() {
     return shaderSkipsEnabled.get();
 }
-
 void setShaderSkipsEnabled(bool enable) {
     shaderSkipsEnabled.base_value = enable;
 }
@@ -1349,6 +1408,14 @@ std::string getDefaultControllerID() {
 
 void setDefaultControllerID(std::string id) {
     defaultControllerID = id;
+}
+
+std::string getActiveControllerID() {
+    return activeControllerID.get();
+}
+
+void setActiveControllerID(std::string id) {
+    activeControllerID = id;
 }
 
 bool getBackgroundControllerInput() {
@@ -1403,6 +1470,7 @@ void load(const std::filesystem::path& path, bool is_game_specific) {
         enableDiscordRPC = toml::find_or<bool>(general, "enableDiscordRPC", true);
         logFilter.setFromToml(general, "logFilter", is_game_specific);
         logType.setFromToml(general, "logType", is_game_specific);
+        isIdenticalLogGrouped.setFromToml(general, "isIdenticalLogGrouped", is_game_specific);
         userNames.setFromToml(general, "userNames", is_game_specific);
 
         if (!Common::g_is_release) {
@@ -1443,7 +1511,9 @@ void load(const std::filesystem::path& path, bool is_game_specific) {
         firstBootHandled.setFromToml(general, "firstBootHandled", is_game_specific);
         chooseHomeTab = toml::find_or<std::string>(general, "chooseHomeTab", chooseHomeTab);
         defaultControllerID.setFromToml(general, "defaultControllerID", "");
+        activeControllerID.setFromToml(general, "activeControllerID", "");
         sys_modules_path = toml::find_fs_path_or(general, "sysModulesPath", sys_modules_path);
+        fonts_path = toml::find_fs_path_or(general, "fontsPath", fonts_path);
     }
 
     if (data.contains("Input")) {
@@ -1478,6 +1548,8 @@ void load(const std::filesystem::path& path, bool is_game_specific) {
 
         fsrEnabled.setFromToml(gpu, "fsrEnabled", is_game_specific);
         rcasEnabled.setFromToml(gpu, "rcasEnabled", is_game_specific);
+        rcasAttenuation.setFromToml(gpu, "rcasAttenuation", is_game_specific);
+
         if (is_game_specific) {
             if (auto opt = toml::get_optional<int>(gpu, "readbackSpeedMode")) {
                 readbackSpeedMode.game_specific_value = static_cast<ReadbackSpeed>(*opt);
@@ -1540,6 +1612,8 @@ void load(const std::filesystem::path& path, bool is_game_specific) {
         rdocEnable.setFromToml(vk, "rdocEnable", is_game_specific);
         pipelineCacheEnable.setFromToml(vk, "pipelineCacheEnable", is_game_specific);
         pipelineCacheArchive.setFromToml(vk, "pipelineCacheArchive", is_game_specific);
+        shaderCompilationOverlayEnable.setFromToml(vk, "shaderCompilationOverlayEnable",
+                                                   is_game_specific);
     }
     string current_version = {};
 
@@ -1742,10 +1816,12 @@ void save(const std::filesystem::path& path) {
     data["General"]["compatibilityEnabled"] = compatibilityData;
     data["General"]["checkCompatibilityOnStartup"] = checkCompatibilityOnStartup;
     data["General"]["sysModulesPath"] = string{fmt::UTF(sys_modules_path.u8string()).data};
+    data["General"]["fontsPath"] = string{fmt::UTF(fonts_path.u8string()).data};
     data["General"]["isConnectedToNetwork"] = isConnectedToNetwork.base_value;
     data["General"]["httpHostOverride"] = httpHostOverride.base_value;
     data["General"]["firstBootHandled"] = firstBootHandled.base_value;
     data["General"]["defaultControllerID"] = defaultControllerID.base_value;
+    data["General"]["activeControllerID"] = activeControllerID.base_value;
 
     data["Input"]["cursorState"] = cursorState.base_value;
     data["Input"]["cursorHideTimeout"] = cursorHideTimeout.base_value;
@@ -1798,6 +1874,7 @@ void save(const std::filesystem::path& path) {
     data["Vulkan"]["rdocEnable"] = rdocEnable.base_value;
     data["Vulkan"]["pipelineCacheEnable"] = pipelineCacheEnable.base_value;
     data["Vulkan"]["pipelineCacheArchive"] = pipelineCacheArchive.base_value;
+    data["Vulkan"]["shaderCompilationOverlayEnable"] = shaderCompilationOverlayEnable.base_value;
 
     data["Debug"]["DebugDump"] = isDebugDump.base_value;
     data["Debug"]["CollectShader"] = isShaderDebug.base_value;
@@ -2008,7 +2085,8 @@ void setDefaultValues() {
     vkGuestMarkers = false;
     rdocEnable = false;
     pipelineCacheEnable = false;
-    pipelineCacheArchive = true;
+    pipelineCacheArchive = false;
+    shaderCompilationOverlayEnable = false;
 
     // Debug
     isDebugDump = false;
@@ -2040,20 +2118,11 @@ constexpr std::string_view GetDefaultGlobalConfig() {
     return R"(# Anything put here will be loaded for all games,
 # alongside the game's config or default.ini depending on your preference.
 
-hotkey_renderdoc_capture = f12
-hotkey_fullscreen = f11
-hotkey_show_fps = f10
-hotkey_pause = f9
-hotkey_reload_inputs = f8
-hotkey_toggle_mouse_to_joystick = f7
-hotkey_toggle_mouse_to_gyro = f6
-hotkey_toggle_mouse_to_touchpad = delete
-hotkey_quit = lctrl, lshift, end
 )";
 }
 
 constexpr std::string_view GetDefaultInputConfig() {
-    return R"(#Feeling lost? Check out the Help section!
+    return R"(#Feeling lost? Check out the Help section!!
 
 # Keyboard bindings
 
@@ -2126,7 +2195,7 @@ analog_deadzone = rightjoystick, 2, 127
 override_controller_color = false, 0, 0, 255
 )";
 }
-std::filesystem::path GetFoolproofInputConfigFile(const std::string& game_id) {
+std::filesystem::path GetInputConfigFile(const std::string& game_id) {
     // Read configuration file of the game, and if it doesn't exist, generate it from default
     // If that doesn't exist either, generate that from getDefaultConfig() and try again
     // If even the folder is missing, we start with that.
@@ -2155,14 +2224,46 @@ std::filesystem::path GetFoolproofInputConfigFile(const std::string& game_id) {
         return default_config_file;
     }
 
-    // Create global config if it doesn't exist yet
     if (game_id == "global" && !std::filesystem::exists(config_file)) {
         if (!std::filesystem::exists(config_file)) {
             const auto global_config = GetDefaultGlobalConfig();
-            // std::ofstream global_config_stream(config_file);
-            // if (global_config_stream) {
-            //     global_config_stream << global_config;
-            //  }
+            std::ofstream global_config_stream(config_file);
+            if (global_config_stream) {
+                global_config_stream << global_config;
+            }
+        }
+    }
+    if (game_id == "global") {
+        std::map<string, string> default_bindings_to_add = {
+            {"hotkey_renderdoc_capture", "f12"},
+            {"hotkey_fullscreen", "f11"},
+            {"hotkey_show_fps", "f10"},
+            {"hotkey_pause", "f9"},
+            {"hotkey_reload_inputs", "f8"},
+            {"hotkey_toggle_mouse_to_joystick", "f7"},
+            {"hotkey_toggle_mouse_to_gyro", "f6"},
+            {"hotkey_toggle_mouse_to_touchpad", "delete"},
+            {"hotkey_quit", "lctrl, lshift, end"},
+            {"hotkey_volume_up", "kpplus"},
+            {"hotkey_volume_down", "kpminus"},
+        };
+        std::ifstream global_in(config_file);
+        string line;
+        while (std::getline(global_in, line)) {
+            line.erase(std::remove_if(line.begin(), line.end(),
+                                      [](unsigned char c) { return std::isspace(c); }),
+                       line.end());
+            std::size_t equal_pos = line.find('=');
+            if (equal_pos == std::string::npos) {
+                continue;
+            }
+            std::string output_string = line.substr(0, equal_pos);
+            default_bindings_to_add.erase(output_string);
+        }
+        global_in.close();
+        std::ofstream global_out(config_file, std::ios::app);
+        for (auto const& b : default_bindings_to_add) {
+            global_out << b.first << " = " << b.second << "\n";
         }
     }
 
